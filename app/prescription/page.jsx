@@ -5,10 +5,29 @@ import { useAuth } from "@/components/auth-provider"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import  Badge  from "@/components/ui/badge"
+import Badge from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { ArrowLeft, Brain, Check, Edit3, Plus, Save, Trash2, User, Clock, Pill, AlertTriangle } from "lucide-react"
+import { 
+  ArrowLeft, 
+  Brain, 
+  Check, 
+  Edit3, 
+  Plus, 
+  Save, 
+  Trash2, 
+  User, 
+  Clock, 
+  Pill, 
+  AlertTriangle,
+  FileText,
+  Printer,
+  Download,
+  Stethoscope,
+  Calendar,
+  MapPin,
+  Phone
+} from "lucide-react"
 
 export default function PrescriptionPage() {
   const { user } = useAuth()
@@ -19,6 +38,7 @@ export default function PrescriptionPage() {
   const [editingMedicine, setEditingMedicine] = useState(null)
   const [doctorNotes, setDoctorNotes] = useState("")
   const [isSaving, setIsSaving] = useState(false)
+  const [prescriptionId, setPrescriptionId] = useState("")
 
   useEffect(() => {
     if (!user) {
@@ -26,56 +46,70 @@ export default function PrescriptionPage() {
       return
     }
 
-    // Simulate AI prescription generation
     const generateAIPrescription = async () => {
       setIsLoading(true)
+      
+      try {
+        const symptoms = searchParams.get("symptoms") || ""
+        const patientId = searchParams.get("patientId") || "PAT001"
+        
+        // Generate unique prescription ID
+        const prescId = `RX${Date.now().toString().slice(-6)}`
+        setPrescriptionId(prescId)
+        
+        const res = await fetch("/api/gemini-prescription", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            symptoms: decodeURIComponent(symptoms),
+            patientId: patientId,
+            doctorId: user.id,
+            timestamp: new Date().toISOString()
+          })
+        })
 
-      const patientId = searchParams.get("patientId")
-      const symptoms = searchParams.get("symptoms") || ""
+        if (!res.ok) {
+          const errorData = await res.json()
+          throw new Error(errorData.error || `HTTP error! status: ${res.status}`)
+        }
 
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+        const data = await res.json()
 
-      // Mock AI-generated prescription based on symptoms
-      const aiSuggestions = [
-        {
-          id: "1",
-          name: "Acetaminophen",
-          dosage: "500mg",
-          frequency: "Every 6 hours",
-          duration: "5 days",
-          instructions: "Take with food to avoid stomach upset",
-          aiSuggested: true,
-        },
-        {
-          id: "2",
-          name: "Ibuprofen",
-          dosage: "400mg",
-          frequency: "Every 8 hours",
-          duration: "3 days",
-          instructions: "Take after meals",
-          aiSuggested: true,
-        },
-        {
-          id: "3",
-          name: "Vitamin C",
-          dosage: "1000mg",
-          frequency: "Once daily",
-          duration: "7 days",
-          instructions: "Take with breakfast",
-          aiSuggested: true,
-        },
-      ]
+        if (!data.success) {
+          throw new Error(data.error || "Failed to generate prescription")
+        }
 
-      setPrescriptionData({
-        patientName: "John Smith", // In real app, fetch from patient data
-        symptoms: decodeURIComponent(symptoms),
-        aiSuggestions,
-        finalPrescription: [...aiSuggestions], // Start with AI suggestions
-        doctorNotes: "",
-      })
-
-      setIsLoading(false)
+        setPrescriptionData({
+          prescriptionId: prescId,
+          patientName: data.prescription.patientInfo.name || "John Smith",
+          patientAge: data.prescription.patientInfo.age || "35",
+          patientGender: data.prescription.patientInfo.gender || "Male",
+          patientAddress: data.prescription.patientInfo.address || "123 Main St, City",
+          patientPhone: data.prescription.patientInfo.phone || "+1 (555) 123-4567",
+          symptoms: decodeURIComponent(symptoms),
+          diagnosis: data.prescription.diagnosis || "Based on presented symptoms",
+          aiSuggestions: data.prescription.medications || [],
+          finalPrescription: [...(data.prescription.medications || [])],
+          doctorNotes: data.prescription.notes || "",
+          doctorInfo: {
+            name: user.name || "Dr. Sarah Johnson",
+            qualification: "MBBS, MD",
+            registration: "MCI-12345",
+            clinic: "City Medical Center",
+            address: "456 Health Ave, Medical District",
+            phone: "+1 (555) 987-6543"
+          },
+          createdAt: new Date(),
+          mcpContext: data.prescription.context,
+        })
+      } catch (error) {
+        console.error("Error generating prescription:", error)
+        alert("Error generating prescription: " + error.message)
+      } finally {
+        setIsLoading(false)
+      }
     }
 
     generateAIPrescription()
@@ -86,7 +120,7 @@ export default function PrescriptionPage() {
 
     const updatedPrescription = prescriptionData.finalPrescription.map((med) =>
       med.id === medicineId
-        ? { ...med, ...updates, aiSuggested: false } // Mark as doctor-modified
+        ? { ...med, ...updates, aiSuggested: false }
         : med,
     )
 
@@ -131,19 +165,33 @@ export default function PrescriptionPage() {
 
     setIsSaving(true)
 
-    // Simulate saving to MCP server and learning from doctor's modifications
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+    try {
+      const res = await fetch("/api/mcp/save-prescription", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          prescriptionId: prescriptionData.prescriptionId,
+          prescription: prescriptionData,
+          doctorModifications: prescriptionData.finalPrescription.filter(med => !med.aiSuggested)
+        })
+      })
 
-    // In real implementation, this would:
-    // 1. Save the final prescription to the database
-    // 2. Store doctor's modifications for AI learning
-    // 3. Update the personalized recommendation model
+      if (!res.ok) throw new Error("Failed to save prescription")
 
-    setIsSaving(false)
+      alert("Prescription saved successfully! The AI system has learned from your modifications.")
+      router.push("/dashboard")
+    } catch (error) {
+      console.error("Error saving prescription:", error)
+      alert("Error saving prescription: " + error.message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
-    // Show success message and redirect
-    alert("Prescription saved successfully! The AI system has learned from your modifications.")
-    router.push("/dashboard")
+  const handlePrint = () => {
+    window.print()
   }
 
   if (!user) return null
@@ -154,7 +202,7 @@ export default function PrescriptionPage() {
         <div className="text-center">
           <Brain className="h-12 w-12 text-blue-600 animate-pulse mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Generating AI Prescription</h2>
-          <p className="text-gray-600">Analyzing symptoms and generating recommendations...</p>
+          <p className="text-gray-600">Analyzing symptoms with Gemini AI...</p>
         </div>
       </div>
     )
@@ -165,7 +213,7 @@ export default function PrescriptionPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b">
+      <header className="bg-white shadow-sm border-b print:hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
@@ -178,53 +226,198 @@ export default function PrescriptionPage() {
                 <h1 className="text-xl font-semibold text-gray-900">AI Prescription Generator</h1>
               </div>
             </div>
-            <Button onClick={handleSavePrescription} disabled={isSaving}>
-              <Save className="h-4 w-4 mr-2" />
-              {isSaving ? "Saving..." : "Save Prescription"}
-            </Button>
+            <div className="flex space-x-2">
+              <Button variant="outline" onClick={handlePrint}>
+                <Printer className="h-4 w-4 mr-2" />
+                Print
+              </Button>
+              <Button onClick={handleSavePrescription} disabled={isSaving}>
+                <Save className="h-4 w-4 mr-2" />
+                {isSaving ? "Saving..." : "Save Prescription"}
+              </Button>
+            </div>
           </div>
         </div>
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Patient Info */}
-        <Card className="mb-6">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <User className="h-5 w-5 text-gray-400" />
-                <div>
-                  <CardTitle>{prescriptionData.patientName}</CardTitle>
-                  <CardDescription>Prescription Generation Session</CardDescription>
-                </div>
-              </div>
-              <Badge variant="secondary">
-                <Clock className="h-3 w-3 mr-1" />
-                {new Date().toLocaleDateString()}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-2 block">Current Symptoms</label>
-              <p className="text-gray-900 bg-gray-50 p-3 rounded-lg">{prescriptionData.symptoms}</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Tabs defaultValue="ai-suggestions" className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="ai-suggestions">AI Suggestions</TabsTrigger>
-            <TabsTrigger value="final-prescription">Final Prescription</TabsTrigger>
+        <Tabs defaultValue="prescription" className="space-y-6">
+          <TabsList className="print:hidden">
+            <TabsTrigger value="prescription">Prescription</TabsTrigger>
+            <TabsTrigger value="ai-suggestions">AI Analysis</TabsTrigger>
+            <TabsTrigger value="edit">Edit Prescription</TabsTrigger>
             <TabsTrigger value="learning-insights">AI Learning</TabsTrigger>
           </TabsList>
 
+          {/* Main Prescription View */}
+          <TabsContent value="prescription" className="space-y-6">
+            <div className="bg-white border-2 border-gray-300 rounded-lg p-8 print:border-black print:shadow-none print:rounded-none">
+              {/* Prescription Header */}
+              <div className="border-b-2 border-gray-200 pb-6 mb-6 print:border-black">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h1 className="text-3xl font-bold text-blue-800 mb-2">PRESCRIPTION</h1>
+                    <div className="flex items-center space-x-4 text-sm text-gray-600">
+                      <span className="flex items-center">
+                        <FileText className="h-4 w-4 mr-1" />
+                        Rx ID: {prescriptionData.prescriptionId}
+                      </span>
+                      <span className="flex items-center">
+                        <Calendar className="h-4 w-4 mr-1" />
+                        {prescriptionData.createdAt.toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <Badge variant="secondary" className="mb-2">
+                      <Brain className="h-3 w-3 mr-1" />
+                      AI Generated
+                    </Badge>
+                    <p className="text-xs text-gray-500">Powered by Gemini AI</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Doctor Information */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div className="border border-gray-200 rounded-lg p-4 print:border-black">
+                  <h3 className="font-semibold text-gray-900 mb-3 flex items-center">
+                    <Stethoscope className="h-4 w-4 mr-2 text-blue-600" />
+                    Doctor Information
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <p><strong> {prescriptionData.doctorInfo.name}</strong></p>
+                    <p>{prescriptionData.doctorInfo.qualification}</p>
+                    <p>Reg. No: {prescriptionData.doctorInfo.registration}</p>
+                    <p className="flex items-center">
+                      <MapPin className="h-3 w-3 mr-1" />
+                      {prescriptionData.doctorInfo.clinic}
+                    </p>
+                    <p>{prescriptionData.doctorInfo.address}</p>
+                    <p className="flex items-center">
+                      <Phone className="h-3 w-3 mr-1" />
+                      {prescriptionData.doctorInfo.phone}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="border border-gray-200 rounded-lg p-4 print:border-black">
+                  <h3 className="font-semibold text-gray-900 mb-3 flex items-center">
+                    <User className="h-4 w-4 mr-2 text-green-600" />
+                    Patient Information
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>{prescriptionData.patientName}</strong></p>
+                    <p>Age: {prescriptionData.patientAge} years, {prescriptionData.patientGender}</p>
+                    <p className="flex items-center">
+                      <MapPin className="h-3 w-3 mr-1" />
+                      {prescriptionData.patientAddress}
+                    </p>
+                    <p className="flex items-center">
+                      <Phone className="h-3 w-3 mr-1" />
+                      {prescriptionData.patientPhone}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Chief Complaints & Diagnosis */}
+              <div className="mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-2">Chief Complaints:</h4>
+                    <p className="text-sm bg-gray-50 p-3 rounded border print:bg-white print:border-black">
+                      {prescriptionData.symptoms}
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-2">Diagnosis:</h4>
+                    <p className="text-sm bg-gray-50 p-3 rounded border print:bg-white print:border-black">
+                      {prescriptionData.diagnosis}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Prescription Medications */}
+              <div className="mb-8">
+                <h3 className="text-xl font-semibold text-gray-900 mb-4 border-b border-gray-200 pb-2 print:border-black">
+                  ℞ MEDICATIONS
+                </h3>
+                <div className="space-y-4">
+                  {prescriptionData.finalPrescription.map((medicine, index) => (
+                    <div key={medicine.id} className="border border-gray-200 rounded-lg p-4 print:border-black print:rounded-none">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3 mb-2">
+                            <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded-full print:bg-gray-200 print:text-black">
+                              {index + 1}
+                            </span>
+                            <h4 className="font-semibold text-lg text-gray-900">{medicine.name}</h4>
+                            {!medicine.aiSuggested && (
+                              <Badge variant="outline" className="text-xs print:hidden">
+                                Modified
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm ml-8">
+                            <div>
+                              <span className="text-gray-600 font-medium">Dosage:</span>
+                              <p className="font-semibold">{medicine.dosage}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-600 font-medium">Frequency:</span>
+                              <p className="font-semibold">{medicine.frequency}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-600 font-medium">Duration:</span>
+                              <p className="font-semibold">{medicine.duration}</p>
+                            </div>
+                            <div>
+                              <span className="text-gray-600 font-medium">Instructions:</span>
+                              <p className="font-semibold">{medicine.instructions}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Doctor's Notes */}
+              {(prescriptionData.doctorNotes || doctorNotes) && (
+                <div className="mb-8">
+                  <h4 className="font-semibold text-gray-900 mb-2">Additional Notes:</h4>
+                  <p className="text-sm bg-gray-50 p-4 rounded border print:bg-white print:border-black">
+                    {prescriptionData.doctorNotes || doctorNotes}
+                  </p>
+                </div>
+              )}
+
+              {/* Footer */}
+              <div className="border-t border-gray-200 pt-6 print:border-black">
+                <div className="flex justify-between items-center text-sm text-gray-600">
+                  <div>
+                    <p>Date: {prescriptionData.createdAt.toLocaleDateString()}</p>
+                    <p>Time: {prescriptionData.createdAt.toLocaleTimeString()}</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="h-16 border-b border-gray-400 mb-2 print:border-black"></div>
+                    <p className="font-medium"> {prescriptionData.doctorInfo.name}</p>
+                    <p>Digital Signature</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* AI Suggestions Tab */}
           <TabsContent value="ai-suggestions" className="space-y-6">
             <Alert>
               <Brain className="h-4 w-4" />
               <AlertDescription>
-                The AI has analyzed the symptoms and generated the following medicine recommendations. You can modify
-                these suggestions in the Final Prescription tab.
+                Gemini AI has analyzed the symptoms and generated the following medicine recommendations based on medical knowledge and best practices.
               </AlertDescription>
             </Alert>
 
@@ -238,7 +431,7 @@ export default function PrescriptionPage() {
                           <Pill className="h-4 w-4 text-blue-600" />
                           <h3 className="font-semibold text-gray-900">{medicine.name}</h3>
                           <Badge variant="secondary" className="text-xs">
-                            AI Suggested
+                            Gemini AI Suggested
                           </Badge>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -267,7 +460,8 @@ export default function PrescriptionPage() {
             </div>
           </TabsContent>
 
-          <TabsContent value="final-prescription" className="space-y-6">
+          {/* Edit Prescription Tab */}
+          <TabsContent value="edit" className="space-y-6">
             <div className="flex justify-between items-center">
               <Alert className="flex-1 mr-4">
                 <Edit3 className="h-4 w-4" />
@@ -359,12 +553,12 @@ export default function PrescriptionPage() {
             </Card>
           </TabsContent>
 
+          {/* Learning Insights Tab */}
           <TabsContent value="learning-insights" className="space-y-6">
             <Alert>
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                The AI system continuously learns from your prescription modifications to provide better recommendations
-                in the future.
+                The Gemini AI system continuously learns from your prescription modifications through the MCP server to provide better recommendations in the future.
               </AlertDescription>
             </Alert>
 
@@ -398,16 +592,17 @@ export default function PrescriptionPage() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Personalization Impact</CardTitle>
+                  <CardTitle>AI Enhancement Impact</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="text-sm text-gray-600">
-                    <p className="mb-2">Your modifications will help the AI:</p>
+                    <p className="mb-2">Your modifications help Gemini AI:</p>
                     <ul className="list-disc list-inside space-y-1">
                       <li>Learn your prescribing preferences</li>
-                      <li>Improve future recommendations</li>
+                      <li>Improve diagnostic accuracy</li>
                       <li>Adapt to your clinical style</li>
                       <li>Consider patient-specific factors</li>
+                      <li>Update medical knowledge base</li>
                     </ul>
                   </div>
                 </CardContent>
@@ -416,6 +611,24 @@ export default function PrescriptionPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Print Styles */}
+      <style jsx>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          .prescription-print, .prescription-print * {
+            visibility: visible;
+          }
+          .prescription-print {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+          }
+        }
+      `}</style>
     </div>
   )
 }
@@ -439,6 +652,7 @@ function EditMedicineForm({ medicine, onSave, onCancel }) {
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
           />
         </div>
         <div>
@@ -448,6 +662,7 @@ function EditMedicineForm({ medicine, onSave, onCancel }) {
             value={formData.dosage}
             onChange={(e) => setFormData({ ...formData, dosage: e.target.value })}
             className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
           />
         </div>
         <div>
@@ -457,6 +672,7 @@ function EditMedicineForm({ medicine, onSave, onCancel }) {
             value={formData.frequency}
             onChange={(e) => setFormData({ ...formData, frequency: e.target.value })}
             className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
           />
         </div>
         <div>
@@ -466,6 +682,7 @@ function EditMedicineForm({ medicine, onSave, onCancel }) {
             value={formData.duration}
             onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
             className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            required
           />
         </div>
       </div>
@@ -476,6 +693,7 @@ function EditMedicineForm({ medicine, onSave, onCancel }) {
           value={formData.instructions}
           onChange={(e) => setFormData({ ...formData, instructions: e.target.value })}
           className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          required
         />
       </div>
       <div className="flex space-x-2">
