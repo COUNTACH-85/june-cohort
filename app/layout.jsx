@@ -1,6 +1,7 @@
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { AuthProvider } from "@/components/auth-provider"
+import ConditionalFooter from "../src/components/ConditionalFooter";
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -12,8 +13,13 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className="light">
-      <body className={inter.className}>
-        <AuthProvider>{children}</AuthProvider>
+      <body className={`${inter.className} min-h-screen flex flex-col`}>
+        <AuthProvider>
+          <main className="flex-1">
+            {children}
+          </main>
+          <ConditionalFooter />
+        </AuthProvider>
       </body>
     </html>
   )
