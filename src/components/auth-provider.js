@@ -22,7 +22,7 @@ export function AuthProvider({ children }) {
     // Simulate API call
     await new Promise((resolve) => setTimeout(resolve, 1000))
 
-    // Mock authentication - in real app, this would be an API call
+    // Demo credentials
     if (email === "doctor@healthcare.com" && password === "password") {
       const userData = {
         id: "1",
@@ -35,6 +35,19 @@ export function AuthProvider({ children }) {
       setIsLoading(false)
       return true
     }
+
+    // Check for user created via signup
+    const storedUser = localStorage.getItem("healthcare_user")
+    if (storedUser) {
+      const userData = JSON.parse(storedUser)
+      // Check if email and password match
+      if (userData.email === email && password.length >= 6) {
+        setUser(userData)
+        setIsLoading(false)
+        return true
+      }
+    }
+
     setIsLoading(false)
     return false
   }
